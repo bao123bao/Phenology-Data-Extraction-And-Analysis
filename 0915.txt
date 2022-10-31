@@ -1,0 +1,242 @@
+# export era5 temperature and precipitation data
+from IPython.display import Image
+border = ee.FeatureCollection("projects/ee-rmohon835/assets/cornArea/NW_border").geometry();
+# era5day=ee.ImageCollection("ECMWF/ERA5/DAILY").filterBounds(border).filterDate('2019-07-25','2020');
+
+# imgLs=era5day.toList(era5day.size())
+# collectionSize=imgLs.size().getInfo()
+# print(era5day.size().getInfo())
+
+
+
+# GEE
+
+data = ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY");
+border = ee.FeatureCollection("users/rmohon835/NW_border").geometry();
+
+oneDayData=data.filterDate('2005-01-01','2005-01-02').select('surface_net_solar_radiation');
+# print(oneDayData);
+
+aggregatedDay=oneDayData.sum().clip(border);
+
+# print(aggregatedDay.propertyNames());
+# print(aggregatedDay.get('system:index'));
+
+
+# for each year
+
+for year in range(2005,2020):
+  onePeriodData=data.filterDate(str(year)+'-01-01',str(year)+'-02-01').select('surface_net_solar_radiation');  
+  size=oneDayData.size().getInfo()
+  cnt=1
+  for i in range(1,365+1,8):
+    if cnt>=3:
+      break
+    oneDayData=onePeriodData.filter(ee.Filter.calendarRange(i,i+7,'day_of_year'))
+    sizeCollection=oneDayData.size().getInfo()
+    print(sizeCollection)
+    imgLs=oneDayData.toList(sizeCollection)
+    # print(oneDayData.first().get('system:index').getInfo())
+    outNSSR=oneDayData.sum().clip(border)
+    date1=oneDayData.first().get('system:index').getInfo()[:-3]
+    size2=imgLs.size().getInfo()
+    print(size2)
+    date2=ee.Image(imgLs.get(size2-1)).get('system:index').getInfo()[:-3]
+    
+    print(date1,date2)
+    cnt+=1
+    # task=ee.batch.Export.image.toDrive(
+    #   image=outNSSR,
+    #   description=date++'NSSR',
+    #   folder='NSSR_0915',
+    #   region=border,
+    #   crs='EPSG:4326',
+    #   scale=11000
+    # )
+    # task.start()
+    break 
+
+  break
+ 
+
+
+ 8day-470415446.500000
+ 1day-537333431.000000
+
+
+
+
+ # export era5 temperature and precipitation data
+from IPython.display import Image
+border = ee.FeatureCollection("projects/ee-rmohon835/assets/cornArea/NW_border").geometry();
+
+# GEE
+
+data = ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY");
+border = ee.FeatureCollection("users/rmohon835/NW_border").geometry();
+
+
+# print(aggregatedDay.propertyNames());
+# print(aggregatedDay.get('system:index'));
+
+# for each year
+
+for year in range(2005,2020):
+  onePeriodData=data.filterDate(str(year)+'-01-01',str(year)+'-02-01').select('surface_net_solar_radiation');  
+  size=onePeriodData.size().getInfo()
+  cnt=1
+  for i in range(1,365+1,8):
+    if cnt>=5:
+      break
+    # eight day's NSSR imageCollection data for summation
+    oneDayData=onePeriodData.filter(ee.Filter.calendarRange(i,i+7,'day_of_year'))
+    sizeCollection=oneDayData.size().getInfo()
+    print(sizeCollection)
+    imgLs=oneDayData.toList(sizeCollection)
+    # print(oneDayData.first().get('system:index').getInfo())
+
+    outNSSR=oneDayData.sum().clip(border)
+
+    # the start date
+    date1=oneDayData.first().get('system:index').getInfo()[:-3]
+    size2=imgLs.size().getInfo()
+    
+    # the end date 
+    date2=ee.Image(imgLs.get(size2-1)).get('system:index').getInfo()[:-3]
+    
+    print(date1,date2)
+    cnt+=1
+
+    task=ee.batch.Export.image.toDrive(
+      image=outNSSR,
+      description=date1+'_'+date2+'_NSSR',
+      folder='NSSR_0915',
+      region=border,
+      crs='EPSG:4326',
+      scale=11000
+    )
+    task.start()
+     
+
+  break
+ 
+466969400
+470415446
+54922964
+54922964
+
+72359393.250000
+470415446.500000
+
+
+
+
+# export NSSR data of 8-day summation
+from IPython.display import Image
+border = ee.FeatureCollection("projects/ee-rmohon835/assets/cornArea/NW_border").geometry();
+
+# GEE
+
+data = ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY");
+border = ee.FeatureCollection("users/rmohon835/NW_border").geometry();
+
+
+# print(aggregatedDay.propertyNames());
+# print(aggregatedDay.get('system:index'));
+
+# for each year
+
+for year in range(2005,2020):
+  onePeriodData=data.filterDate(str(year)+'-01-01',str(year+1)+'-01-01').select('surface_net_solar_radiation');  
+  size=onePeriodData.size().getInfo()
+  print(size)
+  for i in range(1,365+1,8):
+    # eight day's NSSR imageCollection data for summation
+    oneDayData=onePeriodData.filter(ee.Filter.calendarRange(i,i+7,'day_of_year'))
+    sizeCollection=oneDayData.size().getInfo()
+    # print(sizeCollection)
+    imgLs=oneDayData.toList(sizeCollection)
+    # print(oneDayData.first().get('system:index').getInfo())
+
+    outNSSR=oneDayData.sum().clip(border)
+
+    # the start date
+    date1=oneDayData.first().get('system:index').getInfo()[:-3]
+    size2=imgLs.size().getInfo()
+    
+    # the end date 
+    date2=ee.Image(imgLs.get(size2-1)).get('system:index').getInfo()[:-3]
+    
+    # print(date1,date2)
+
+    task=ee.batch.Export.image.toDrive(
+      image=outNSSR,
+      description=date1+'_'+date2+'_NSSR',
+      folder='NSSR_0915',
+      region=border,
+      crs='EPSG:4326',
+      scale=11000
+    )
+    task.start()
+    print(date1+'_'+date2+'_NSSR')
+ 
+
+
+
+
+
+
+
+ 
+ # NDVI 16-day data 
+from IPython.display import Image
+border = ee.FeatureCollection("projects/ee-rmohon835/assets/cornArea/NW_border").geometry();
+
+# GEE
+
+data = ee.ImageCollection("MODIS/061/MOD13Q1").filterDate('2005','2020').select('NDVI')
+border = ee.FeatureCollection("users/rmohon835/NW_border") .geometry()
+
+
+# print(aggregatedDay.propertyNames());
+# print(aggregatedDay.get('system:index'));
+
+# for each year
+
+# eight day's NSSR imageCollection data for summation
+sizeCollection=data.size().getInfo()
+print(sizeCollection)
+imgLs=data.toList(sizeCollection)
+# print(oneDayData.first().get('system:index').getInfo())
+
+for i in range(sizeCollection):
+  img=ee.Image(imgLs.get(i)).clip(border)
+  date=img.get('system:index').getInfo()
+  # print(img.get('system:index').getInfo())
+
+  task=ee.batch.Export.image.toDrive(
+    image=img,
+    description=date+'_NDVI16',
+    folder='NDVI16_0916',
+    region=border,
+    crs='EPSG:4326',
+    scale=1000
+  )
+  task.start()
+  print(date+'_NDVI16')
+
+
+# the start date
+# date1=oneDayData.first().get('system:index').getInfo()[:-3]
+# size2=imgLs.size().getInfo()
+
+# # the end date 
+# date2=ee.Image(imgLs.get(size2-1)).get('system:index').getInfo()[:-3]
+
+# print(date1,date2)
+# cnt+=1
+
+
+  
+
+ 

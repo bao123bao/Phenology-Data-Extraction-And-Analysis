@@ -1,0 +1,109 @@
+# Export Two-Stage-Blended Pheno data on 0907
+from IPython.display import Image
+import pprint
+# a2005 = ee.Image("projects/ee-rmohon835/assets/cornArea/NDVImax2005")
+border = ee.FeatureCollection("projects/ee-rmohon835/assets/cornArea/NW_border").geometry();
+
+# Reference images for sanp and intersect (namely, NDVImax2005-2019)
+refImageYears=[]
+for i in range(2005,2020):
+  img = ee.Image("projects/ee-rmohon835/assets/cornArea/NDVImax"+str(i))
+  refImageYears.append(img)
+# print(len(refImageYears))
+
+# MODIS pheno data
+ModPheno=ee.ImageCollection("MODIS/006/MCD12Q2")
+
+# Date function
+def DateToUnix(date):
+  return ee.Number(ee.Date(date).millis()).divide(1000*3600*24).getInfo();
+
+# print(DateToUnix('2005-01-01'))
+stages=['Greenup','MidGreenup','Peak','Maturity',
+  'Senescence','MidGreendown','Dormancy']
+# thisStage=stages[i] 
+i=0
+for year in range(2005,2020):
+
+  # #  step1: create mask for cycle 1 using gp1
+  pheno=ModPheno.filterDate(str(year),str(year+1)).filterBounds(border);
+
+  greenUp1=pheno.select('Greenup_1').first().clip(border);  #  all greenUp1 data labeled 2005
+  greenUp1In2005=greenUp1.gt(DateToUnix(str(year)+'-01-01'));     #  greenUp1 data in 2005
+  greenUp1In2005Mask=greenUp1In2005.selfMask();             #  greenUp1 mask in 2005
+  
+  dorm1=pheno.select('Dormancy_1').first().clip(border);    #  all dorm1 data labeled 2005
+  dorm1In2005=dorm1.lt(DateToUnix(str(year)+'-12-31'));           #  dorm1 data in 2005
+  dorm1In2005Mask=dorm1In2005.selfMask();                   #  dorm1 mask in 2005
+
+  c1BothIn2005Mask=greenUp1In2005Mask.And(dorm1In2005Mask); #  Both ends lie in 2005 for cycle 1
+
+
+
+  # #  step2: create mask for cycle 2 using gp2
+
+  greenUp2=pheno.select('Greenup_2').first().clip(border);  #  all greenUp2 data labeled 2005
+  greenUp2In2005=greenUp2.gt(DateToUnix(str(year)+'-01-01'));     #  greenUp2 data in 2005
+  greenUp2In2005Mask=greenUp2In2005.selfMask();             #  greenUp2 mask in 2005
+
+  dorm2=pheno.select('Dormancy_2').first().clip(border);    #  all dorm2 data labeled 2005
+  dorm2In2005=dorm2.lt(DateToUnix(str(year)+'-12-31'));           #  dorm2 data in 2005
+  dorm2In2005Mask=dorm2In2005.selfMask();                   #  dorm2 mask in 2005
+
+  notInC1Both=c1BothIn2005Mask.unmask().Not().clip(border).selfMask();
+  c2BothIn2005Mask=greenUp2In2005Mask.And(dorm2In2005Mask).And(notInC1Both); #  Both ends lie in 2005 for cycle 2
+
+  for stage in stages:
+
+    # change by selection of stage
+    stage1AsOutput=pheno.select(stage+'_1').first().clip(border);
+    Stage1BothIn2005=stage1AsOutput.updateMask(c1BothIn2005Mask); #  GreenUp of Both ends lie in 2005 for cycle 1
+
+    # change by selection of stage
+    Stage2AsOutput=pheno.select(stage+'_2').first().clip(border);  #  all greenUp2 data labeled 2005
+    Stage2BothIn2005=Stage2AsOutput.updateMask(c2BothIn2005Mask).clip(border); #  GreenUp of Both ends lie in 2005 for cycle 2
+
+    # #  step3: blend cycle 1 and 2
+    ThisYearStage=Stage1BothIn2005.blend(Stage2BothIn2005);
+    ThisYearStage=ThisYearStage.rename(['pheno']);
+
+    # #  test if time range is suitable, and cut the 1% tail 
+    stats=ThisYearStage.reduceRegion(
+      reducer=ee.Reducer.percentile(percentiles=[0.5,99.5],
+        outputNames=['p05','p995']),
+      geometry=border,
+      scale=1000
+    )
+
+    pct005=ee.Number(stats.get('pheno_p05')).toInt().getInfo()
+    pct995=ee.Number(stats.get('pheno_p995')).toInt().getInfo()
+    # print(pct005)
+    # print(pct995)
+    StageThisYear=ThisYearStage.updateMask(
+      ThisYearStage.gte(pct005).And(ThisYearStage.lte(pct995))
+      );
+    StageThisYear=StageThisYear.mask(refImageYears[i]).clip(border)
+    
+    # url=StageThisYear.reproject('EPSG:4326').getThumbUrl({
+    #     'min':12700,'max':13100,
+    #     'dimensions':1000,
+    #     'region':border,
+    #     'palette':['green','red']
+    #     })
+    
+
+    task=ee.batch.Export.image.toDrive(
+      image=StageThisYear,
+      description=str(i+2005)+'_'+stage,
+      folder='pheno_colab_0907',
+      region=border,
+      crs='EPSG:4326',
+      scale=1000
+    )
+    task.start()
+    # pprint.pprint(refImageYears[i].getInfo())
+    print(str(i+2005)+'_'+stage)
+  i+=1
+
+
+# Image(url=url)

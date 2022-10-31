@@ -1,0 +1,83 @@
+# 集成上面多步的物候数据处理流程（重采样+对齐+求交集mask+交集mask提取+对齐+行列数一致）
+
+#1.将下载的物候数据进行重采样和栅格裁剪（像元对齐）
+import arcpy,os
+
+# 从谷歌云盘下载的数据集的位置（tif格式）
+path=r'D:\文件\华癸项目\test\pheno0906'
+
+arcpy.env.workspace = r"D:\文件\华癸项目\project\Northwestern_region\Northwestern_region.gdb"
+arcpy.env.addOutputsToMap=False
+outpath_sanp_1=r'D:\文件\华癸项目\test\pheno0906\assemble\outpath_sanp_1' # 第一次输出的重采样和对齐栅格
+outpath_result=r'D:\文件\华癸项目\test\pheno0906\assemble\outpath_result'
+refImg=arcpy.Raster(r'D:\文件\华癸项目\玉米区域基准\NDVImax2005.img') # 基准图像
+arcpy.env.snapRaster = refImg
+#arcpy.env.outputCoordinateSystem = arcpy.SpatialReference('WGS 1984')
+
+def getFiles(path,end):
+    '''
+    return names,paths
+    '''
+    nameList=[]
+    pathList=[]
+    fileList=os.listdir(path)
+    for file in fileList:
+        if file.endswith(end): 
+            nameList.append(file)
+            pathList.append(os.path.join(path,file))
+    return nameList,pathList
+
+
+names,paths=getFiles(path,'.tif')
+print(names,paths)
+
+
+for i in range(len(paths)):
+    resampled_raster=arcpy.sa.Resample(
+        raster=paths[i],
+        resampling_type='NearestNeighbor',
+        output_cellsize='0.0109853249934563'
+    )
+    
+    arcpy.Clip_management( # 结果输出到 outpath_sanp_1
+        in_raster=resampled_raster,
+        out_raster=os.path.join(outpath_sanp_1,names[i].strip('.img')+'.img'),
+        rectangle='73.4989887367899 31.7068464367543 111.244565414306 49.1844985013432',
+        nodata_value='0'
+    )
+    print('clip and snap: '+str(i))
+    
+#2.求出相交的mask
+path=outpath_sanp_1
+outPathMask=r'D:\文件\华癸项目\test\pheno0906\assemble'
+names,paths=getFiles(path,'.img')
+
+ls=[]
+for i in range(len(paths)):
+    r=arcpy.Raster(paths[i])
+    ls.append(r)
+
+mask=ls[0]
+for i in range(len(ls)-1):
+    mask=mask & ls[i+1]
+mask.save(os.path.join(outPathMask,'all_mask.img'))
+
+
+#3.利用相交的mask进行掩膜提取，并再次裁减，最后保存
+names,inRasters=getFiles(outpath_sanp_1,'img')
+arcpy.env.snapRaster = refImg # 设置捕捉栅格
+arcpy.env.cellSize = 0.0109853249934563
+arcpy.env.extent = arcpy.Extent(73.498989,31.706846,111.244565,49.184499) # 设置处理范围
+# print(names)
+# print(inRasters)
+
+for i in range(len(inRasters)):
+    OutRas = arcpy.sa.ExtractByMask(inRasters[i], mask)
+    arcpy.management.Clip(
+        in_raster=OutRas,
+        outpath_result=os.path.join(outpath,names[i].strip('.img')+'.img'),
+        rectangle='73.4989887367899 31.7068464367543 111.244565414306 49.1844985013432',
+        nodata_value='0'
+    )
+    print('mask and clip: '+str(i))
+

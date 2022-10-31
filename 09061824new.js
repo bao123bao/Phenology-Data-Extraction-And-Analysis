@@ -1,0 +1,121 @@
+var UnixToDate=function(timestamp) {
+  return ee.Date(ee.Number(timestamp).multiply(1000*3600*24));
+};
+
+var DateToUnix=function(date) {
+  return ee.Number(ee.Date(date).millis()).divide(1000*3600*24);
+};
+
+border=border.geometry();
+
+var pheno=ee.ImageCollection("MODIS/006/MCD12Q2")
+  .filterDate('2005','2006')
+  .filterBounds(border);
+
+var cycle=pheno.select('NumCycles').first().clip(border);
+
+var cycle1=cycle.eq(1).selfMask();
+var cycle2=cycle.eq(2).selfMask();
+
+
+print(UnixToDate(12970));
+
+ls=ee.List(['Greenup_1','MidGreenup_1','Peak_1','Maturity_1',
+  'Senescence_1','MidGreendown_1','Dormancy_1']);
+
+for(var i=1;i<=7;i++) {
+var thisStage='MidGreenup_1'; 
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//green up
+
+// step1: create mask for cycle 1 using gp1
+
+var greenUp1=pheno.select('Greenup_1').first().clip(border);  // all greenUp1 data labeled 2005
+var greenUp1In2005=greenUp1.gt(DateToUnix('2005-01-01'));     // greenUp1 data in 2005
+var greenUp1In2005Mask=greenUp1In2005.selfMask();             // greenUp1 mask in 2005
+ 
+var dorm1=pheno.select('Dormancy_1').first().clip(border);    // all dorm1 data labeled 2005
+var dorm1In2005=dorm1.lt(DateToUnix('2005-12-31'));           // dorm1 data in 2005
+var dorm1In2005Mask=dorm1In2005.selfMask();                   // dorm1 mask in 2005
+
+var c1BothIn2005Mask=greenUp1In2005Mask.and(dorm1In2005Mask); // Both ends lie in 2005 for cycle 1
+
+var greenUp1AsOutput=pheno.select(thisStage).first().clip(border);
+
+var Stage1BothIn2005=greenUp1AsOutput.updateMask(c1BothIn2005Mask); // GreenUp of Both ends lie in 2005 for cycle 1
+//Map.addLayer(greenUp1BothIn2005,{min:12517,max:13148,palette:['red','green']},'greenUp1BothIn2005');
+
+
+// step1: create mask for cycle 2 using gp2
+
+var greenUp2=pheno.select('Greenup_2').first().clip(border);  // all greenUp2 data labeled 2005
+var greenUp2In2005=greenUp2.gt(DateToUnix('2005-01-01'));     // greenUp2 data in 2005
+var greenUp2In2005Mask=greenUp2In2005.selfMask();             // greenUp2 mask in 2005
+
+var dorm2=pheno.select('Dormancy_2').first().clip(border);    // all dorm2 data labeled 2005
+var dorm2In2005=dorm2.lt(DateToUnix('2005-12-31'));           // dorm2 data in 2005
+var dorm2In2005Mask=dorm2In2005.selfMask();                   // dorm2 mask in 2005
+
+var notInC1Both=c1BothIn2005Mask.unmask().not().clip(border).selfMask();
+var c2BothIn2005Mask=greenUp2In2005Mask.and(dorm2In2005Mask).and(notInC1Both); // Both ends lie in 2005 for cycle 2
+
+var Stage2BothIn2005=pheno.select(thisStage).first().clip(border);  // all greenUp2 data labeled 2005
+
+
+var Stage2BothIn2005=Stage2BothIn2005.updateMask(c2BothIn2005Mask).clip(border); // GreenUp of Both ends lie in 2005 for cycle 2
+//Map.addLayer(greenUp2BothIn2005,{min:12517,max:13148,palette:['red','green']},'greenUp2BothIn2005');
+//Map.addLayer(c1BothIn2005Mask.unmask().not().clip(border).selfMask());
+
+
+// step3: blend cycle 1 and 2
+var Stage2005=Stage1BothIn2005.blend(Stage2BothIn2005);
+Stage2005=Stage2005.rename(['pheno']);
+/*var hist=ui.Chart.image.histogram({
+  image:Stage2005,
+  region:border,
+  scale:1000,
+  minBucketWidth:5
+});
+print(hist);*/
+
+// test if time range is suitable, and cut the 1% tail 
+var stats=Stage2005.reduceRegion({
+  reducer:ee.Reducer.percentile({percentiles:[0.5,99.5],
+    outputNames:['p05','p995']}),
+  geometry:border,
+  scale:1000
+});
+
+var pct005=ee.Number(stats.get('pheno_p05')).toInt();
+var pct995=ee.Number(stats.get('pheno_p995')).toInt();
+
+Stage2005=Stage2005.updateMask(
+  Stage2005.gte(pct005).and(Stage2005.lte(pct995)).and(a2005)
+  );
+
+
+Map.addLayer(Stage2005,{min:12517,max:13148,palette:['orange','green','red']},'GreenUp2005');
+
+Export.image.toDrive({
+  image:Stage2005,
+  description:'MidGP2005',
+  folder:'pheno090',
+  region:border,
+  crs:'EPSG:4326',
+  scale:1000
+});
+
+//print(UnixToDate(13104));
+}
+
+/*var hist=ui.Chart.image.histogram({
+  image:Stage2005,
+  region:border,
+  scale:500,
+  minBucketWidth:5
+});
+print(hist);
+*/
+
+//print(UnixToDate(12836));
+//print(UnixToDate(12978));

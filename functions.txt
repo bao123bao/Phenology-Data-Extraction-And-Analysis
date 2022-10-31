@@ -1,0 +1,161 @@
+var UnixToDate=function(timestamp) {
+  return ee.Date(ee.Number(timestamp).multiply(1000*3600*24));
+};
+
+var DateToUnix=function(date) {
+  return ee.Number(ee.Date(date).millis()).divide(1000*3600*24);
+};
+
+border=border.geometry();
+
+var pheno=ee.ImageCollection("MODIS/006/MCD12Q2")
+  .filterDate('2005','2006')
+  .filterBounds(border);
+
+var cycle=pheno.select('NumCycles').first().clip(border);
+
+var cycle1=cycle.eq(1).selfMask();
+var cycle2=cycle.eq(2).selfMask();
+
+//print(cycle);
+
+//Map.addLayer(cycle,{min:1,max:2,palette:['green','blue','red']},'cycleNumber');
+//Map.addLayer(cycle2,{min:0,max:1,palette:['green','blue','red']},'cycle2');
+//Map.addLayer(cycle1,{min:0,max:1,palette:['green','blue','red']},'cycle1');
+//Map.addLayer(cycle2,{min:1,max:2,palette:['green','blue','red']});
+
+var greenUp1=pheno.select('Greenup_1').first().clip(border);
+//Map.addLayer(greenUp1,{min:12517,max:13148,palette:['green','red']},'greenUp1');
+
+
+
+//print(DateToUnix('2005-01-01'));
+
+
+var greenUp1In2005=greenUp1.gt(DateToUnix('2005-01-01')).selfMask();
+greenUp1In2005=greenUp1.updateMask(greenUp1In2005);
+//print(greenUp1);
+//Map.addLayer(greenUp1In2005,{min:12517,max:13148,palette:['green','red']},'greenUp1in2005');
+
+var greenUpNotIn2005=greenUp1.lt(DateToUnix('2005-01-01')).selfMask();
+
+//Map.addLayer(greenUpNotIn2005,{min:0,max:1,palette:['purple','red']},'greenUp1Notin2005');
+
+
+var greenUp2=pheno.select('Greenup_2').first().clip(border);
+//Map.addLayer(greenUp2,{min:12517,max:13148,palette:['green','red']},'greenUp2');
+
+
+
+var dorm1=pheno.select('Dormancy_1').first().clip(border);
+//Map.addLayer(dorm1);
+var dorm1in2005=dorm1.lt(DateToUnix('2005-12-31')).selfMask();
+//Map.addLayer(dorm1in2005,{min:0,max:1,palette:['green','red']},'dorm1');
+
+
+
+
+
+
+var greenUp2in2005=greenUp2.gt(DateToUnix('2005-01-01')).selfMask();
+greenUp2in2005=greenUp2in2005.and(greenUpNotIn2005).and(dorm1in2005);
+greenUp2in2005=greenUp2.updateMask(greenUp2in2005);
+//Map.addLayer(greenUp2in2005,{min:12517,max:13148,palette:['red','green']},'greenUp2in2005');
+
+// ultimate image in 2005 of green up stage
+var patchedGreenUp2005=greenUp1In2005.blend(greenUp2in2005);
+// greenUp2in2005 is the 'hole' area for patching
+//Map.addLayer(patchedGreenUp2005,{min:12517,max:13148,palette:['red','green']},'patchedGreenUp2005');
+
+
+
+
+print(UnixToDate(12970));
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//green up
+
+// step1: pheno for cycle 1
+
+var greenUp1=pheno.select('Greenup_1').first().clip(border);  // all greenUp1 data labeled 2005
+var greenUp1In2005=greenUp1.gt(DateToUnix('2005-01-01'));     // greenUp1 data in 2005
+var greenUp1In2005Mask=greenUp1In2005.selfMask();             // greenUp1 mask in 2005
+ 
+var dorm1=pheno.select('Dormancy_1').first().clip(border);    // all dorm1 data labeled 2005
+var dorm1In2005=dorm1.lt(DateToUnix('2005-12-31'));           // dorm1 data in 2005
+var dorm1In2005Mask=dorm1In2005.selfMask();                   // dorm1 mask in 2005
+
+var c1BothIn2005Mask=greenUp1In2005Mask.and(dorm1In2005Mask); // Both ends lie in 2005 for cycle 1
+var greenUp1BothIn2005=greenUp1.updateMask(c1BothIn2005Mask); // GreenUp of Both ends lie in 2005 for cycle 1
+//Map.addLayer(greenUp1BothIn2005,{min:12517,max:13148,palette:['red','green']},'greenUp1BothIn2005');
+
+
+// step2: pheno for cycle 2
+
+var greenUp2=pheno.select('Greenup_2').first().clip(border);  // all greenUp2 data labeled 2005
+var greenUp2In2005=greenUp2.gt(DateToUnix('2005-01-01'));     // greenUp2 data in 2005
+var greenUp2In2005Mask=greenUp2In2005.selfMask();             // greenUp2 mask in 2005
+
+var dorm2=pheno.select('Dormancy_2').first().clip(border);    // all dorm2 data labeled 2005
+var dorm2In2005=dorm2.lt(DateToUnix('2005-12-31'));           // dorm2 data in 2005
+var dorm2In2005Mask=dorm2In2005.selfMask();                   // dorm2 mask in 2005
+
+var notInC1Both=c1BothIn2005Mask.unmask().not().clip(border).selfMask();
+var c2BothIn2005Mask=greenUp2In2005Mask.and(dorm2In2005Mask).and(notInC1Both); // Both ends lie in 2005 for cycle 2
+var greenUp2BothIn2005=greenUp2.updateMask(c2BothIn2005Mask).clip(border); // GreenUp of Both ends lie in 2005 for cycle 2
+//Map.addLayer(greenUp2BothIn2005,{min:12517,max:13148,palette:['red','green']},'greenUp2BothIn2005');
+//Map.addLayer(c1BothIn2005Mask.unmask().not().clip(border).selfMask());
+
+
+// step3: blend cycle 1 and 2
+var GreenUp2005=greenUp1BothIn2005.blend(greenUp2BothIn2005);
+GreenUp2005=GreenUp2005.rename(['pheno']);
+var hist=ui.Chart.image.histogram({
+  image:GreenUp2005,
+  region:border,
+  scale:500,
+  minBucketWidth:5
+});
+print(hist);
+
+// test if time range is suitable, and cut the 1% tail 
+var stats=GreenUp2005.reduceRegion({
+  reducer:ee.Reducer.percentile({percentiles:[0.5,99.5],
+    outputNames:['p05','p995']}),
+  geometry:border,
+  scale:1000
+});
+
+var pct005=ee.Number(stats.get('pheno_p05')).toInt();
+var pct995=ee.Number(stats.get('pheno_p995')).toInt();
+
+GreenUp2005=GreenUp2005.updateMask(
+  GreenUp2005.gte(pct005).and(GreenUp2005.lte(pct995)).and(a2005)
+  );
+
+
+Map.addLayer(GreenUp2005,{min:12517,max:13148,palette:['orange','green','red']},'GreenUp2005');
+
+Export.image.toDrive({
+  image:GreenUp2005,
+  description:'GreenUp2005',
+  folder:'pheno0905',
+  region:border,
+  crs:'EPSG:4326',
+  scale:1000
+});
+
+//print(UnixToDate(13104));
+
+
+var hist=ui.Chart.image.histogram({
+  image:GreenUp2005,
+  region:border,
+  scale:500,
+  minBucketWidth:5
+});
+print(hist);
+
+
+//print(UnixToDate(12836));
+//print(UnixToDate(12978));

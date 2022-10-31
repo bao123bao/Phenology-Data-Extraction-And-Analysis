@@ -1,0 +1,116 @@
+# 集成上面多步的物候数据处理流程（重采样+对齐+求各阶段和有产量区域的交集mask+交集mask提取+对齐+行列数一致）
+
+#1.将下载的物候数据进行重采样和栅格裁剪（像元对齐）
+import arcpy,os
+
+# 从谷歌云盘下载的数据集的位置（tif格式）
+path=r'D:\文件\华癸项目\test\phenoAllYears0908'
+
+arcpy.env.workspace = r"D:\文件\华癸项目\project\Northwestern_region\Northwestern_region.gdb"
+arcpy.env.addOutputsToMap=False
+outpath_sanp_1=r'D:\文件\华癸项目\test\phenoAllYears0908\outpath_sanp_1' # 第一次输出的重采样和对齐栅格
+outpath_result=r'D:\文件\华癸项目\test\phenoAllYears0908\outpath_result'
+outPathMask=r'D:\文件\华癸项目\test\phenoAllYears0908\assemble'
+refImg=arcpy.Raster(r'D:\文件\华癸项目\玉米区域基准\NDVImax2005.img') # 基准图像
+arcpy.env.snapRaster = refImg
+
+areaYieldPath=r'D:\文件\华癸项目\提取的逐像素玉米单位产量'
+#arcpy.env.outputCoordinateSystem = arcpy.SpatialReference('WGS 1984')
+
+# 新建文件夹
+if not(os.path.exists(outpath_sanp_1)):
+    os.mkdir(outpath_sanp_1)
+if not(os.path.exists(outpath_result)):
+    os.mkdir(outpath_result)
+if not(os.path.exists(outPathMask)):
+    os.mkdir(outPathMask)
+
+def getFiles(path,end,year):
+    '''
+    return names,paths
+    '''
+    nameList=[]
+    pathList=[]
+    fileList=os.listdir(path)
+    for file in fileList:
+        if file.endswith(end) and file.startswith(str(year)): 
+            nameList.append(file)
+            pathList.append(os.path.join(path,file))
+    return nameList,pathList
+
+def getFilesOrigin(path,end):
+    '''
+    return names,paths
+    '''
+    nameList=[]
+    pathList=[]
+    fileList=os.listdir(path)
+    for file in fileList:
+        if file.endswith(end): 
+            nameList.append(file)
+            pathList.append(os.path.join(path,file))
+    return nameList,pathList
+
+_,yieldAreaFiles=getFilesOrigin(areaYieldPath,'.img')
+# print(yieldAreaFiles)
+
+
+for year in range(2005,2020):
+    path=r'D:\文件\华癸项目\test\phenoAllYears0908'
+    print(str(year))
+    names,paths=getFiles(path,'.tif',year)
+    print(names,paths)
+    
+    for i in range(len(paths)):
+        resampled_raster=arcpy.sa.Resample(
+            raster=paths[i],
+            resampling_type='NearestNeighbor',
+            output_cellsize='0.0109853249934563'
+        )
+
+        arcpy.Clip_management( # 结果输出到 outpath_sanp_1
+            in_raster=resampled_raster,
+            out_raster=os.path.join(outpath_sanp_1,names[i].strip('.img').strip('.tif')+'.img'),
+            rectangle='73.4989887367899 31.7068464367543 111.244565414306 49.1844985013432',
+            nodata_value='0'
+        )
+        print('clip and snap: '+str(i))
+
+    #2.求出相交的mask
+    path=outpath_sanp_1
+
+    names,paths=getFiles(path,'.img',year)
+
+    ls=[]
+    for i in range(len(paths)):
+        r=arcpy.Raster(paths[i])
+        ls.append(r)
+
+    mask=ls[0]
+    for i in range(len(ls)-1):
+        mask=mask & ls[i+1]
+    mask=mask&arcpy.Raster(yieldAreaFiles[year-2005])
+    mask.save(os.path.join(outPathMask,'all_mask.img'))
+
+
+    #3.利用相交的mask进行掩膜提取，并再次裁减，最后保存
+    names,inRasters=getFiles(outpath_sanp_1,'img',year)
+    arcpy.env.snapRaster = refImg # 设置捕捉栅格
+    arcpy.env.cellSize = 0.0109853249934563
+    arcpy.env.extent = arcpy.Extent(73.498989,31.706846,111.244565,49.184499) # 设置处理范围
+    # print(names)
+    # print(inRasters)
+
+    for i in range(len(inRasters)):
+        OutRas = arcpy.sa.ExtractByMask(inRasters[i], mask)
+        arcpy.management.Clip(
+            in_raster=OutRas,
+            out_raster=os.path.join(outpath_result,names[i].strip('.img').strip('.tif')+'.img'),
+            rectangle='73.4989887367899 31.7068464367543 111.244565414306 49.1844985013432',
+            nodata_value='0'
+        )
+        print('mask and clip: '+str(i))
+        
+    print(str(year)+' done.')
+    
+print('Done!')
